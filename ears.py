@@ -42,8 +42,7 @@ def serve(host, port, handler, handler_args):
     try:
         while 1:
             conn, (client_host, client_port) = s.accept()
-            if client_host == '127.0.0.1':
-                handler(conn, *handler_args)
+            handler(conn, *handler_args)
             conn.close()
     finally:
         s.close()
@@ -61,7 +60,7 @@ def handle(sock, config, args):
 
 
 def main():
-    HOST, PORT = '127.0.0.1', 3277
+    HOST, PORT = '', 3277
 
     config = load_config()
     args = ' '.join(sys.argv[1:])
