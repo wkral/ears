@@ -43,16 +43,15 @@ def serve(host, port, handler, handler_args):
         while 1:
             conn, (client_host, client_port) = s.accept()
             handler(conn, *handler_args)
-            conn.close()
     finally:
         s.close()
 
 
 def handle(sock, config, args):
-    command = '{0} {1}'.format(config['exec'], args)
-
     filename = sock.recv(1024)  # shouldn't be more data than this
-    print filename
+    sock.close()  # Don't make the other end wait for the results
+
+    command = '{0} {1}'.format(config['exec'], args)
 
     for extension in config['watch']:
         if fnmatch.fnmatch(filename, extension):
