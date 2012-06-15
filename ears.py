@@ -4,6 +4,8 @@ import os
 import socket
 import subprocess
 import sys
+import threading
+import Queue
 
 
 def load_config_file(config_path):
@@ -35,38 +37,52 @@ def load_config():
     return config
 
 
-def serve(host, port, handler, handler_args):
+def serve(host, port, config, queue):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind((host, port))
     s.listen(1)
     try:
         while 1:
             conn, (client_host, client_port) = s.accept()
-            handler(conn, *handler_args)
+            filename = conn.recv(1024)  # shouldn't be more data than this
+            conn.close()  # Don't make the other end wait for the results
+            for extension in config['watch']:
+                if fnmatch.fnmatch(filename, extension):
+                    try:
+                        queue.put_nowait(filename)
+                    except Queue.Full:
+                        pass  # Don't need to queue up too many jobs
     finally:
         s.close()
 
 
-def handle(sock, config, args):
-    filename = sock.recv(1024)  # shouldn't be more data than this
-    sock.close()  # Don't make the other end wait for the results
+def worker(config, queue):
+    args = ' '.join(sys.argv[1:])
 
     command = '{0} {1}'.format(config['exec'], args)
 
-    for extension in config['watch']:
-        if fnmatch.fnmatch(filename, extension):
-            subprocess.call(command, shell=True)
+    while 1:
+        filename = queue.get()
+        for extension in config['watch']:
+            if fnmatch.fnmatch(filename, extension):
+                subprocess.call(command, shell=True)
 
 
 def main():
     HOST, PORT = '', 3277
 
     config = load_config()
-    args = ' '.join(sys.argv[1:])
+
+    queue = Queue.Queue(maxsize=1)
+
+    thread = threading.Thread(target=worker, args=(config, queue))
+    thread.daemon = True
+    thread.start()
+
     try:
-        serve(HOST, PORT, handle, [config, args])
+        serve(HOST, PORT, config, queue)
     except KeyboardInterrupt:
-        print '\nGoodbye'
+        print '\rGoodbye'
 
 
 if __name__ == '__main__':
