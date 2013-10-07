@@ -37,7 +37,7 @@ def load_config():
     return config
 
 
-def serve(host, port, config, queue):
+def serve(host, port, queues):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.bind((host, port))
     s.listen(1)
@@ -46,26 +46,25 @@ def serve(host, port, config, queue):
             conn, (client_host, client_port) = s.accept()
             filename = conn.recv(1024)  # shouldn't be more data than this
             conn.close()  # Don't make the other end wait for the results
-            for extension in config['watch']:
-                if fnmatch.fnmatch(filename, extension):
-                    try:
-                        queue.put_nowait(filename)
-                    except Queue.Full:
-                        pass  # Don't need to queue up too many jobs
+            for queue in queues:
+                try:
+                    queue.put_nowait(filename)
+                except Queue.Full:
+                    pass  # Don't need to queue up too many jobs
     finally:
         s.close()
 
 
-def worker(config, queue):
-    args = ' '.join(sys.argv[1:])
-
-    command = '{0} {1}'.format(config['exec'], args)
-
+def worker(job, queue):
     while 1:
         filename = queue.get()
-        for extension in config['watch']:
+        if not filename.startswith(job['cwd']):
+            continue
+        for extension in job['watch']:
             if fnmatch.fnmatch(filename, extension):
-                subprocess.call(command, shell=True)
+                output = None if job.get('output', True) else subprocess.PIPE
+                subprocess.call(job['exec'], shell=True, stdout=output,
+                                stderr=output)
 
 
 def main():
@@ -73,14 +72,20 @@ def main():
 
     config = load_config()
 
-    queue = Queue.Queue(maxsize=1)
+    queues = []
+    cwd = os.getcwd()
 
-    thread = threading.Thread(target=worker, args=(config, queue))
-    thread.daemon = True
-    thread.start()
+    for job in config['jobs']:
+        queue = Queue.Queue(maxsize=1)
+        job['cwd'] = cwd
+
+        thread = threading.Thread(target=worker, args=(job, queue))
+        thread.daemon = True
+        thread.start()
+        queues.append(queue)
 
     try:
-        serve(HOST, PORT, config, queue)
+        serve(HOST, PORT, queues)
     except KeyboardInterrupt:
         print '\rGoodbye'
 

@@ -5,7 +5,7 @@ from setuptools import find_packages, setup
 
 setup(
     name = "ears",
-    version = "0.1",
+    version = "0.2",
 
     author = "William Kral",
     author_email = "william.kral@gmail.com",
